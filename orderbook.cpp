@@ -286,6 +286,40 @@ class OrderBook {
             return MatchOrders();
         }
 
+        void cancelOrder(OrderId orderId) {
+            if(!orders_.contains(orderId)) {
+                return;
+            }
+
+
+            auto& [order, orderIterator] = orders_.at(orderId);
+            orders_.erase(orderId);
+            Price orderPrice = order->getPrice();
+            if(order->getSide() == Side::Buy) {
+                auto& orders = bids_.at(orderPrice);
+                orders.erase(orderIterator);
+                if(bids_.at(orderPrice).size()) {
+                    bids_.erase(orderPrice);
+                }
+            } else {
+                auto& orders = asks_.at(orderPrice);
+                orders.erase(orderIterator);
+                if(asks_.at(orderPrice).size()) {
+                    asks_.erase(orderPrice);
+                }
+            }
+        }
+
+        Trades ModifyOrder(ModOrder order) {
+            if (!orders_.contains(order.getOrderId())) return {};
+            // we can just cancel and replace, as that's what it is
+            // we need orderId for cancel order, orderPointer for add order
+            const auto& [orderptr, iterator] = orders_.at(order.getOrderId());
+
+            cancelOrder(order.getOrderId());
+            return addTrade(order.makeOrderPointer(orderptr->getOrderType()));
+        }
+
 };
 
 int main() {
