@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <map>
 #include <list>
+#include <numeric>
+#include <iostream>
 
 
 
@@ -320,9 +322,46 @@ class OrderBook {
             return addTrade(order.makeOrderPointer(orderptr->getOrderType()));
         }
 
+        std::size_t getSize() const {
+            return orders_.size();
+        }
+
+        OrderbookLevels getLevels() const {
+            Levels bids, asks;
+            bids.reserve(orders_.size());
+            asks.reserve(orders_.size());
+
+            auto makeLevel = [](Price price, const OrderPointers& orders) {
+                return Level{ price, std::accumulate(orders.begin(), orders.end(), (Quantity)(0), [](std::size_t runningSum, const OrderPointer& order) {
+                    return runningSum + order->getRemainingQuantity();
+                })};
+            };
+
+            for (const auto& [price, orders] : bids_) {
+                bids.push_back(makeLevel(price, orders));
+            }
+
+            for (const auto& [price, orders] : asks_) {
+                asks.push_back(makeLevel(price, orders));
+            }
+
+            return OrderbookLevels(bids, asks);
+        }
+
 };
 
 int main() {
+
+    OrderBook orderbook;
+    orderbook.addTrade(std::make_shared<Order>(OrderType::GoodTillCanceled, 1, Side::Buy, 15, 4));
+    std::cout << "Size: " << orderbook.getSize() << std::endl;
+    orderbook.cancelOrder(1);
+    std::cout << "Size: " << orderbook.getSize() << std::endl;
+    orderbook.addTrade(std::make_shared<Order>(OrderType::GoodTillCanceled, 1, Side::Buy, 15, 4));
+    orderbook.addTrade(std::make_shared<Order>(OrderType::GoodTillCanceled, 2, Side::Sell, 15, 2));
+    std::cout << "Size: " << orderbook.getSize() << std::endl;
+    orderbook.addTrade(std::make_shared<Order>(OrderType::GoodTillCanceled, 3, Side::Sell, 15, 2));
+    std::cout << "Size: " << orderbook.getSize() << std::endl;
     return 0;
 }
 
