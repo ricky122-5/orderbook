@@ -3,6 +3,7 @@
 #include <fmt/core.h>
 #include <unordered_map>
 #include <map>
+#include <list>
 
 
 
@@ -97,6 +98,10 @@ class Order {
         return initQuantity_ - remainingQuantity_;
     }
 
+    bool isFilled() {
+        return remainingQuantity_ == 0;
+    }
+
     void Fill(Quantity quantity) {
         if (quantity > remainingQuantity_) 
         throw std::logic_error(fmt::format("Order {} can't be filled for more than its remaining quantity.", orderId_));
@@ -144,6 +149,9 @@ struct TradeInfo {
     OrderId orderId_;
     Price price_;
     Quantity quantity_;
+
+    TradeInfo(OrderId orderId, Price price, Quantity quantity)
+        :   orderId_(orderId), price_(price), quantity_(quantity) {}
 };
 
 class Trade {
@@ -182,7 +190,100 @@ class OrderBook {
                 
                 const auto& [bestAsk, _] = *asks_.begin();
                 return price >= bestAsk;
+            } else {
+                if (bids_.empty())
+                    return false;
+                
+                const auto& [bestBid, _] = *bids_.begin();
+                return price <= bestBid;
             }
+        }
+
+
+        Trades MatchOrders() {
+            Trades trades;
+            trades.reserve(orders_.size());
+
+            while (true) {
+                if(bids_.empty() || asks_.empty()){
+                    break;
+                }
+
+                auto& [bidPrice, bids] = *bids_.begin();
+                auto& [askPrice, asks] = *asks_.begin();
+
+                if (bidPrice < askPrice) {
+                    break;
+                }
+
+
+                while (bids.size() && asks.size()) {
+                    auto& bid = bids.front();
+                    auto& ask = asks.front();
+
+                    Quantity tradeQuantity = std::min(bid->getRemainingQuantity(), ask->getRemainingQuantity());
+
+                    bid->Fill(tradeQuantity);
+                    ask->Fill(tradeQuantity);
+
+                    if(bid->isFilled()) {
+                        bids.pop_front();
+                        orders_.erase(bid->getOrderId());
+                    }
+                    if(ask->isFilled()) {
+                        asks.pop_front();
+                        orders_.erase(ask->getOrderId());
+                    }
+
+                    if(bids.empty()) {
+                        bids_.erase(bidPrice);
+                    }
+                    if(asks.empty()) {
+                        asks_.erase(askPrice);
+                    }
+
+                    trades.push_back(Trade(TradeInfo(bid->getOrderId(), bid->getPrice(), tradeQuantity), 
+                    TradeInfo(ask->getOrderId(), ask->getPrice(), tradeQuantity)));
+                }
+            }
+
+            if(!bids_.empty()) {
+                auto& [_, bids] = *bids_.begin();
+                auto& order = bids.front();
+                if(order->getOrderType() == OrderType::FillAndKill) {
+                    // Cancel order
+                } 
+            }
+
+            if(!asks_.empty()) {
+                auto& [_, asks] = *asks_.begin();
+                auto& order = asks.front();
+                if(order->getOrderType() == OrderType::FillAndKill) {
+                    // Cancel order
+                }
+            }
+
+            return trades;
+        }
+    public:
+
+        Trades addTrade(OrderPointer order) {
+            if(orders_.contains(order->getOrderId())) return {};
+            if(order->getOrderType() == OrderType::FillAndKill && !canMatch(order->getSide(), order->getPrice())) return {};
+
+            OrderPointers::iterator iterator;
+            if(order->getSide() == Side::Buy) {
+                auto& orders = bids_[order->getPrice()];
+                orders.push_back(order);
+                iterator = std::next(orders.begin(), orders.size() - 1);
+            } else {
+                auto& orders = asks_[order->getPrice()];
+                orders.push_back(order);
+                iterator = std::next(orders.begin(), orders.size() - 1);
+            }
+
+            orders_.insert({order->getOrderId(), OrderEntry{order, iterator}});
+            return MatchOrders();
         }
 
 };
